@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -10,12 +11,13 @@ import (
 )
 
 type AccountLog struct {
-	Id          int64
-	Date        string
-	AccountType int
-	Amount      int64
-	AfterAmount int64
-	Desc        string
+	Id             int64
+	Date           string
+	AccountType    int
+	Amount         int64
+	AfterAmount    int64
+	ProfitExchange float64
+	Desc           string
 }
 
 type AccountBook struct {
@@ -39,7 +41,7 @@ type FundDataItem struct {
 }
 
 // 手续费是0.01
-var feeRatio = 0.0015
+var feeRatio = 0.0005
 
 //ID发号器
 var IdChain int64 = 1
@@ -51,7 +53,9 @@ func GetNextId() int64 {
 }
 func main() {
 
-	fh, error := os.Open("./data/efunds_sh50etf_110003.csv")
+	//fh, error := os.Open("./data/efunds_sh50etf_110003.csv")
+
+	fh, error := os.Open("./data/006331.csv")
 	if error != nil {
 		fmt.Println(error.Error())
 		os.Exit(-1)
@@ -101,6 +105,17 @@ func main() {
 	//一万块钱开始
 	var startBalance int64 = 10000 * 10000
 
+	// 买，卖加成比率
+
+	//var buyBonousRatio float64 = 0.999
+	//var sellBonousRatio float64 = 0.125
+
+	//var buyBonousRatio float64 = 0.618
+	//var sellBonousRatio float64 = 0.382
+
+	var buyBonousRatio float64 = 0.125
+	var sellBonousRatio float64 = 50.0
+
 	//从2021年1月4日开始算
 
 	var ab = &AccountBook{
@@ -131,6 +146,8 @@ func main() {
 
 	var accountLogList []AccountLog
 
+	var todayProfit int64 = fundData[0].DayProfit
+
 	for i := len(fundData) - 1; i >= 0; i-- {
 		fmt.Printf("data: %+v", fundData[i])
 
@@ -138,6 +155,7 @@ func main() {
 		if i == len(fundData)-1 {
 			fmt.Println("第一次交易")
 
+			realData := fundData[len(fundData)-2]
 			//1. 从用户支出账户上扣除费用const
 			ab.CostAccount = ab.CostAccount - startBalance
 			accountLogList = append(accountLogList, AccountLog{
@@ -161,15 +179,17 @@ func main() {
 			})
 			//3. 计入基金份额基金市值到  个人的基金账户
 			chargeAmount := startBalance - fee
-			ab.FundAccount = chargeAmount
+			//除以今天的单价，等于基金份额
+			ab.FundAccount = int64((float64(chargeAmount) / float64(realData.DayProfit)) * 10000)
 
 			accountLogList = append(accountLogList, AccountLog{
-				Id:          GetNextId(),
-				Date:        iData.Date,
-				AccountType: 3,
-				Amount:      chargeAmount,
-				AfterAmount: ab.FundAccount,
-				Desc:        "个人基金账户，基金买入",
+				Id:             GetNextId(),
+				Date:           iData.Date,
+				AccountType:    3,
+				Amount:         chargeAmount,
+				AfterAmount:    ab.FundAccount,
+				Desc:           "个人基金账户，基金买入",
+				ProfitExchange: float64(realData.DayProfit) / float64(10000),
 			})
 			//4. 计入入账到 基金公司的账户上
 			ab.PlatformAccount += chargeAmount
@@ -185,58 +205,75 @@ func main() {
 		} else {
 			//上一次交易的值
 			j := i + 1
-			oldData := fundData[j]
 
-			if oldData.DayProfit == iData.DayProfit {
-				// 不处理
-			} else if oldData.DayProfit > iData.DayProfit {
-				// 昨天的比今天的要高，今天亏钱了，补仓
+			k := i - 1
+			if k >= 0 {
 
-				x := float64(oldData.DayProfit-iData.DayProfit) / float64(oldData.DayProfit)
-				fmt.Printf(" 算出来的比率: %+v\n", x)
-				ab, accountLogList = DoBuy(iData.Date, ab, accountLogList, x)
-			} else {
-				//赚钱了，卖出
+				// realData 是次日的价格，一般基金购买，都会是次日结算，所以要用次日的价格来做账
+				realData := fundData[k]
+				oldData := fundData[j]
 
-				x := float64(iData.DayProfit-oldData.DayProfit) / float64(oldData.DayProfit)
+				if oldData.DayProfit == iData.DayProfit {
+					// 不处理
+				} else if oldData.DayProfit > iData.DayProfit {
+					// 昨天的比今天的要高，今天亏钱了，补仓
 
-				fmt.Printf(" 算出来的比率: %+v\n", x)
-				ab, accountLogList = DoSell(iData.Date, ab, accountLogList, x)
+					x := float64(oldData.DayProfit-iData.DayProfit) / float64(oldData.DayProfit)
+					fmt.Printf(" 算出来的比率: %+v\n", x)
+					ab, accountLogList = DoBuy(iData, realData, ab, accountLogList, x, buyBonousRatio)
+				} else {
+					//赚钱了，卖出
+
+					x := float64(iData.DayProfit-oldData.DayProfit) / float64(oldData.DayProfit)
+
+					fmt.Printf(" 算出来的比率: %+v\n", x)
+					ab, accountLogList = DoSell(iData, realData, ab, accountLogList, x, buyBonousRatio)
+				}
 			}
 		}
 
 	}
 
-	fmt.Printf("账户日志:  %v\n", accountLogList)
+	//	fmt.Printf("账户日志:  %v\n", accountLogList)
 
-	fmt.Printf("账户：支出：%f, 收入合计：%f,  [收益: %f, 个人基金账户: %f], 基金公司账户：%f\n", float64(ab.CostAccount)/float64(10000),
-		float64(ab.EarnAccount)/float64(10000)+float64(ab.FundAccount)/float64(10000),
+	x := float64(ab.CostAccount) / float64(10000)
+	x1 := float64(ab.EarnAccount)/float64(10000) + float64(ab.FundAccount)/float64(10000)*float64(todayProfit)/float64(10000)
+	x2 := x1 - math.Abs(x)
+	fmt.Printf("买入加成比率：%f, 卖出加成比率: %f, 账户：支出：%f, 收入合计：%f,  剪刀差: %f [收益: %f, 个人基金账户: %f份基金], 基金公司账户：%f\n",
+		buyBonousRatio,
+		sellBonousRatio,
+
+		x,
+		x1,
+		x2,
 		float64(ab.EarnAccount)/float64(10000),
 		float64(ab.FundAccount)/float64(10000),
 		float64(ab.PlatformAccount)/float64(10000))
 
 }
 
-func DoSell(date string, ab *AccountBook, accountLogList []AccountLog, i float64) (*AccountBook, []AccountLog) {
+func DoSell(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []AccountLog, i float64, bonusRatio float64) (*AccountBook, []AccountLog) {
 	//1. 从用户支出账户上扣除费用const
 
-	sellAmount := int64(float64(ab.FundAccount) * i * 0.9)
+	sellAmount := int64(float64(ab.FundAccount) * i * bonusRatio)
+	sellShare := int64(float64(sellAmount) / float64(g.DayProfit) * 10000)
 
-	ab.FundAccount -= sellAmount
+	ab.FundAccount -= sellShare
 	accountLogList = append(accountLogList, AccountLog{
-		Id:          GetNextId(),
-		Date:        date,
-		AccountType: 3,
-		Amount:      -sellAmount,
-		AfterAmount: ab.FundAccount,
-		Desc:        "基金卖出",
+		Id:             GetNextId(),
+		Date:           f.Date,
+		AccountType:    3,
+		Amount:         -sellShare,
+		AfterAmount:    ab.FundAccount,
+		Desc:           "基金卖出",
+		ProfitExchange: float64(g.DayProfit) / float64(10000),
 	})
 	//2. 计入手续费到 基金公司账户
 	fee := int64(float64(sellAmount) * feeRatio)
 	ab.PlatformAccount += fee
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
-		Date:        date,
+		Date:        f.Date,
 		AccountType: 4,
 		Amount:      fee,
 		AfterAmount: ab.PlatformAccount,
@@ -244,11 +281,12 @@ func DoSell(date string, ab *AccountBook, accountLogList []AccountLog, i float64
 	})
 	//3. 计入基金份额基金市值到  个人的基金账户
 	chargeAmount := sellAmount - fee
+
 	ab.EarnAccount += chargeAmount
 
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
-		Date:        date,
+		Date:        f.Date,
 		AccountType: 2,
 		Amount:      chargeAmount,
 		AfterAmount: ab.EarnAccount,
@@ -258,7 +296,7 @@ func DoSell(date string, ab *AccountBook, accountLogList []AccountLog, i float64
 	ab.PlatformAccount -= sellAmount - fee
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
-		Date:        date,
+		Date:        f.Date,
 		AccountType: 4,
 		Amount:      chargeAmount,
 		AfterAmount: ab.PlatformAccount,
@@ -268,15 +306,15 @@ func DoSell(date string, ab *AccountBook, accountLogList []AccountLog, i float64
 	return ab, accountLogList
 }
 
-func DoBuy(date string, ab *AccountBook, accountLogList []AccountLog, i float64) (*AccountBook, []AccountLog) {
+func DoBuy(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []AccountLog, i float64, bonusRatio float64) (*AccountBook, []AccountLog) {
 	//1. 从用户支出账户上扣除费用const
 
-	buyAmount := int64(float64(ab.FundAccount) * i * 0.1)
+	buyAmount := int64(float64(ab.FundAccount) * i * bonusRatio)
 
 	ab.CostAccount = ab.CostAccount - buyAmount
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
-		Date:        date,
+		Date:        f.Date,
 		AccountType: 1,
 		Amount:      -buyAmount,
 		AfterAmount: ab.CostAccount,
@@ -287,7 +325,7 @@ func DoBuy(date string, ab *AccountBook, accountLogList []AccountLog, i float64)
 	ab.PlatformAccount = ab.PlatformAccount + fee
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
-		Date:        date,
+		Date:        f.Date,
 		AccountType: 4,
 		Amount:      fee,
 		AfterAmount: ab.PlatformAccount,
@@ -295,13 +333,15 @@ func DoBuy(date string, ab *AccountBook, accountLogList []AccountLog, i float64)
 	})
 	//3. 计入基金份额基金市值到  个人的基金账户
 	chargeAmount := buyAmount - fee
-	ab.FundAccount += chargeAmount
+
+	buyShare := int64(float64(chargeAmount) / float64(g.DayProfit) * 10000)
+	ab.FundAccount += buyShare
 
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
-		Date:        date,
+		Date:        f.Date,
 		AccountType: 3,
-		Amount:      chargeAmount,
+		Amount:      buyShare,
 		AfterAmount: ab.FundAccount,
 		Desc:        "个人基金账户，基金买入",
 	})
@@ -309,7 +349,7 @@ func DoBuy(date string, ab *AccountBook, accountLogList []AccountLog, i float64)
 	ab.PlatformAccount += chargeAmount
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
-		Date:        date,
+		Date:        f.Date,
 		AccountType: 4,
 		Amount:      chargeAmount,
 		AfterAmount: ab.PlatformAccount,
