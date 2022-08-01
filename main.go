@@ -39,9 +39,16 @@ type FundDataItem struct {
 	TotalProfit int64
 	ProfitRait  string
 }
+type BonousRatioPair struct {
+	Buy  float64
+	Sell float64
+}
 
 // 手续费是0.01
 var feeRatio = 0.0005
+
+//一万块钱开始
+var startBalance int64 = 10000 * 10000
 
 //ID发号器
 var IdChain int64 = 1
@@ -102,15 +109,12 @@ func main() {
 		}
 	}
 
-	//一万块钱开始
-	var startBalance int64 = 10000 * 10000
-
 	// 买，卖加成比率
 
 	//var buyBonousRatio float64 = 0.999
 	//var sellBonousRatio float64 = 0.125
-	var buyBonousRatio float64 = 37.5
-	var sellBonousRatio float64 = 37.5
+	//var buyBonousRatio float64 = 37.5
+	//var sellBonousRatio float64 = 37.5
 
 	//var buyBonousRatio float64 = 0.618
 	//var sellBonousRatio float64 = 0.382
@@ -118,6 +122,34 @@ func main() {
 	//var buyBonousRatio float64 = 0.125
 	//var sellBonousRatio float64 = 50.0
 
+	var bonusRatioList = []BonousRatioPair{
+		{0, 1.0},
+		{1.0, 0},
+		{1.0, 1.0},
+		{0.0, 0.0},
+		{50.0, 50.0},
+		{50.0, 0.382},
+		{50.0, 0.1},
+		{0.999, 0.125},
+		{37.5, 37.5},
+		{0.618, 0.382},
+		{0.125, 50.0},
+		{150, 0},
+		{100, 0},
+		{50, 0},
+		{25, 0},
+		{20, 0},
+		{10, 0},
+		{5, 0},
+	}
+
+	for _, b := range bonusRatioList {
+		calcProfit(b, fundData)
+	}
+
+}
+
+func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 	//从2021年1月4日开始算
 
 	var ab = &AccountBook{
@@ -220,16 +252,21 @@ func main() {
 				} else if oldData.DayProfit > iData.DayProfit {
 					// 昨天的比今天的要高，今天亏钱了，补仓
 
-					x := float64(oldData.DayProfit-iData.DayProfit) / float64(oldData.DayProfit)
-					//		fmt.Printf(" 算出来的比率: %+v\n", x)
-					ab, accountLogList = DoBuy(iData, realData, ab, accountLogList, x, buyBonousRatio)
+					if b.Buy > 0 {
+						x := float64(oldData.DayProfit-iData.DayProfit) / float64(oldData.DayProfit)
+						//		fmt.Printf(" 算出来的比率: %+v\n", x)
+						ab, accountLogList = DoBuy(iData, realData, ab, accountLogList, x, b.Buy)
+					}
 				} else {
 					//赚钱了，卖出
 
-					x := float64(iData.DayProfit-oldData.DayProfit) / float64(oldData.DayProfit)
+					if b.Sell > 0 {
+						x := float64(iData.DayProfit-oldData.DayProfit) / float64(oldData.DayProfit)
 
-					//			fmt.Printf(" 算出来的比率: %+v\n", x)
-					ab, accountLogList = DoSell(iData, realData, ab, accountLogList, x, buyBonousRatio)
+						//			fmt.Printf(" 算出来的比率: %+v\n", x)
+						ab, accountLogList = DoSell(iData, realData, ab, accountLogList, x, b.Sell)
+					}
+
 				}
 			}
 		}
@@ -241,17 +278,18 @@ func main() {
 	x := float64(ab.CostAccount) / float64(10000)
 	x1 := float64(ab.EarnAccount)/float64(10000) + float64(ab.FundAccount)/float64(10000)*float64(todayProfit)/float64(10000)
 	x2 := x1 - math.Abs(x)
-	fmt.Printf("买入加成比率：%f, 卖出加成比率: %f, 账户：支出：%f, 收入合计：%f,  剪刀差: %f [收益: %f, 个人基金账户: %f份基金], 基金公司账户：%f\n",
-		buyBonousRatio,
-		sellBonousRatio,
+	xr := float64(x2) / float64(math.Abs(x))
+	fmt.Printf("买入加成比率：%f\t卖出加成比率: %f\t账户：支出：%f\t收入合计：%f\t剪刀差: %f\t剪刀收益率: %f\t[收益: %f\t个人基金账户: %f份基金]\t基金公司账户：%f\n",
+		b.Buy,
+		b.Sell,
 
 		x,
 		x1,
 		x2,
+		xr,
 		float64(ab.EarnAccount)/float64(10000),
 		float64(ab.FundAccount)/float64(10000),
 		float64(ab.PlatformAccount)/float64(10000))
-
 }
 
 func DoSell(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []AccountLog, i float64, bonusRatio float64) (*AccountBook, []AccountLog) {
