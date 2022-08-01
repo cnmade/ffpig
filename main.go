@@ -121,27 +121,29 @@ func main() {
 
 	//var buyBonousRatio float64 = 0.125
 	//var sellBonousRatio float64 = 50.0
-
 	var bonusRatioList = []BonousRatioPair{
-		{0, 1.0},
-		{1.0, 0},
-		{1.0, 1.0},
-		{0.0, 0.0},
-		{50.0, 50.0},
-		{50.0, 0.382},
-		{50.0, 0.1},
-		{0.999, 0.125},
-		{37.5, 37.5},
-		{0.618, 0.382},
 		{0.125, 50.0},
-		{150, 0},
-		{100, 0},
-		{50, 0},
-		{25, 0},
-		{20, 0},
-		{10, 0},
-		{5, 0},
 	}
+	//var bonusRatioList = []BonousRatioPair{
+	//	{0, 1.0},
+	//	{1.0, 0},
+	//	{1.0, 1.0},
+	//	{0.0, 0.0},
+	//	{50.0, 50.0},
+	//	{50.0, 0.382},
+	//	{50.0, 0.1},
+	//	{0.999, 0.125},
+	//	{37.5, 37.5},
+	//	{0.618, 0.382},
+	//	{0.125, 50.0},
+	//	{150, 0},
+	//	{100, 0},
+	//	{50, 0},
+	//	{25, 0},
+	//	{20, 0},
+	//	{10, 0},
+	//	{5, 0},
+	//}
 
 	for _, b := range bonusRatioList {
 		calcProfit(b, fundData)
@@ -191,7 +193,7 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 
 			realData := fundData[len(fundData)-2]
 			//1. 从用户支出账户上扣除费用const
-			ab.CostAccount = ab.CostAccount - startBalance
+			ab.CostAccount = -startBalance
 			accountLogList = append(accountLogList, AccountLog{
 				Id:          GetNextId(),
 				Date:        iData.Date,
@@ -202,7 +204,7 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 			})
 			//2. 计入手续费到 基金公司账户
 			fee := int64(float64(startBalance) * feeRatio)
-			ab.PlatformAccount = ab.PlatformAccount + fee
+			ab.PlatformAccount = fee
 			accountLogList = append(accountLogList, AccountLog{
 				Id:          GetNextId(),
 				Date:        iData.Date,
@@ -255,6 +257,8 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 					if b.Buy > 0 {
 						x := float64(oldData.DayProfit-iData.DayProfit) / float64(oldData.DayProfit)
 						//		fmt.Printf(" 算出来的比率: %+v\n", x)
+						// 当前账户
+						fmt.Printf("%+v\n", ab)
 						ab, accountLogList = DoBuy(iData, realData, ab, accountLogList, x, b.Buy)
 					}
 				} else {
@@ -273,7 +277,7 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 
 	}
 
-	//	fmt.Printf("账户日志:  %v\n", accountLogList)
+	WellPrint(accountLogList)
 
 	x := float64(ab.CostAccount) / float64(10000)
 	x1 := float64(ab.EarnAccount)/float64(10000) + float64(ab.FundAccount)/float64(10000)*float64(todayProfit)/float64(10000)
@@ -346,6 +350,34 @@ func DoSell(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Ac
 	return ab, accountLogList
 }
 
+func WellPrint(pl []AccountLog) {
+	/**
+	Id             int64
+	Date           string
+	AccountType    int
+	Amount         int64
+	AfterAmount    int64
+	ProfitExchange float64
+	Desc           string
+	*/
+	fmt.Println("Id\tDate\tAccountType\tAmount\tAfterAmount\tProfitExchange\tDesc")
+	for _, v := range pl {
+		fmt.Printf(" %v\t%v\t%v\t%v %v\t%v\t%v\n", v.Id, v.Date, GetAccountType(v.AccountType), v.Amount, v.AfterAmount, v.ProfitExchange, v.Desc)
+	}
+}
+func GetAccountType(n int) string {
+	switch n {
+	case 1:
+		return "支出账户"
+	case 2:
+		return "收益账户"
+	case 3:
+		return "个人基金账户"
+	case 4:
+		return "基金公司账户"
+	}
+	return "无"
+}
 func DoBuy(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []AccountLog, i float64, bonusRatio float64) (*AccountBook, []AccountLog) {
 	//1. 从用户支出账户上扣除费用const
 
