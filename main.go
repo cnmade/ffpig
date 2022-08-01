@@ -66,4 +66,16 @@ func main() {
 		}
 	}
 
+	//一万块钱开始
+	var startBalance int64 = 10000 * 10000
+
+	//从2021年1月4日开始算
+
+	//支出账户，用于记录一共花多少钱
+	var costAccount int64 = 0
+	//收益账户，记录收益账户，一共赚多少钱
+	var earnAccount int64 = 0
+
+	//记录基金账户，一共有多少及价值
+	var fundAccount int64 = 0
 }
