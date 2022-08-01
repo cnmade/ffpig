@@ -6,7 +6,28 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
+
+type AccountLog struct {
+	Id          int64
+	Date        string
+	AccountType int
+	Amount      int64
+	AfterAmount int64
+	Desc        string
+}
+
+type AccountBook struct {
+	// 1. 支出账户，用于记录一共花多少钱
+	CostAccount int64
+	// 2. 收益账户，记录收益账户，一共赚多少钱
+	EarnAccount int64
+	// 3. 记录个人基金账户，一共有多少及价值
+	FundAccount int64
+	// 4. 记录基金公司账户的 金额
+	PlatformAccount int64
+}
 
 type FundDataItem struct {
 	Date string
@@ -17,6 +38,17 @@ type FundDataItem struct {
 	ProfitRait  string
 }
 
+// 手续费是0.01
+var feeRatio = 0.01
+
+//ID发号器
+var IdChain int64 = 1
+
+func GetNextId() int64 {
+	nextId := atomic.LoadInt64(&IdChain) + 1
+	atomic.StoreInt64(&IdChain, nextId)
+	return nextId
+}
 func main() {
 
 	fh, error := os.Open("./data/efunds_sh50etf_110003.csv")
@@ -71,16 +103,12 @@ func main() {
 
 	//从2021年1月4日开始算
 
-	//支出账户，用于记录一共花多少钱
-	var costAccount int64 = 0
-	//收益账户，记录收益账户，一共赚多少钱
-	var earnAccount int64 = 0
-
-	//记录基金账户，一共有多少及价值
-	var fundAccount int64 = 0
-
-	//记录基金公司账户的 金额
-	var platformAccount int64 = 0
+	var ab = &AccountBook{
+		CostAccount:     0,
+		EarnAccount:     0,
+		FundAccount:     0,
+		PlatformAccount: 0,
+	}
 
 	//买入基金操作
 
@@ -100,4 +128,185 @@ func main() {
 	//操作算法： 如果当天对比前一天，是正的。那么取收益部分的 0.632； 如果是亏损，定额买入10元每天
 
 	//这样操作一年下来，看最后我们是赚了，还是亏了。
+
+	var accountLogList []AccountLog
+
+	for i := len(fundData) - 1; i >= 0; i-- {
+		fmt.Printf("data: %+v", fundData[i])
+
+		iData := fundData[i]
+		if i == len(fundData)-1 {
+			fmt.Println("第一次交易")
+
+			//1. 从用户支出账户上扣除费用const
+			ab.CostAccount = ab.CostAccount - startBalance
+			accountLogList = append(accountLogList, AccountLog{
+				Id:          GetNextId(),
+				Date:        iData.Date,
+				AccountType: 1,
+				Amount:      -startBalance,
+				AfterAmount: ab.CostAccount,
+				Desc:        "扣除费用",
+			})
+			//2. 计入手续费到 基金公司账户
+			fee := int64(float64(startBalance) * feeRatio)
+			ab.PlatformAccount = ab.PlatformAccount + fee
+			accountLogList = append(accountLogList, AccountLog{
+				Id:          GetNextId(),
+				Date:        iData.Date,
+				AccountType: 4,
+				Amount:      fee,
+				AfterAmount: ab.PlatformAccount,
+				Desc:        "基金公司，手续费收入",
+			})
+			//3. 计入基金份额基金市值到  个人的基金账户
+			chargeAmount := startBalance - fee
+			ab.FundAccount = chargeAmount
+
+			accountLogList = append(accountLogList, AccountLog{
+				Id:          GetNextId(),
+				Date:        iData.Date,
+				AccountType: 3,
+				Amount:      chargeAmount,
+				AfterAmount: ab.FundAccount,
+				Desc:        "个人基金账户，基金买入",
+			})
+			//4. 计入入账到 基金公司的账户上
+			ab.PlatformAccount += chargeAmount
+			accountLogList = append(accountLogList, AccountLog{
+				Id:          GetNextId(),
+				Date:        iData.Date,
+				AccountType: 4,
+				Amount:      chargeAmount,
+				AfterAmount: ab.PlatformAccount,
+				Desc:        "基金公司，用户买入基金",
+			})
+
+		} else {
+			//上一次交易的值
+			j := i + 1
+			oldData := fundData[j]
+
+			if oldData.DayProfit == iData.DayProfit {
+				// 不处理
+			} else if oldData.DayProfit > iData.DayProfit {
+				// 昨天的比今天的要高，今天亏钱了，补仓
+
+				x := (oldData.DayProfit - iData.DayProfit) / oldData.DayProfit
+				ab, accountLogList = DoBuy(iData.Date, ab, accountLogList, x)
+			} else {
+				//赚钱了，卖出
+
+				x := ((iData.DayProfit - oldData.DayProfit) / oldData.DayProfit)
+				ab, accountLogList = DoSell(iData.Date, ab, accountLogList, x)
+			}
+		}
+
+	}
+
+	fmt.Printf("账户余额: %v\n", ab)
+
+	fmt.Printf("账户日志:  %v\n", accountLogList)
+
+}
+
+func DoSell(date string, ab *AccountBook, accountLogList []AccountLog, i int64) (*AccountBook, []AccountLog) {
+	//1. 从用户支出账户上扣除费用const
+
+	sellAmount := int64(float64(ab.FundAccount*i) * 0.618)
+
+	ab.FundAccount -= sellAmount
+	accountLogList = append(accountLogList, AccountLog{
+		Id:          GetNextId(),
+		Date:        date,
+		AccountType: 3,
+		Amount:      -sellAmount,
+		AfterAmount: ab.FundAccount,
+		Desc:        "基金卖出",
+	})
+	//2. 计入手续费到 基金公司账户
+	fee := int64(float64(sellAmount) * feeRatio)
+	ab.PlatformAccount += fee
+	accountLogList = append(accountLogList, AccountLog{
+		Id:          GetNextId(),
+		Date:        date,
+		AccountType: 4,
+		Amount:      fee,
+		AfterAmount: ab.PlatformAccount,
+		Desc:        "基金公司，手续费收入",
+	})
+	//3. 计入基金份额基金市值到  个人的基金账户
+	chargeAmount := sellAmount - fee
+	ab.EarnAccount += chargeAmount
+
+	accountLogList = append(accountLogList, AccountLog{
+		Id:          GetNextId(),
+		Date:        date,
+		AccountType: 2,
+		Amount:      chargeAmount,
+		AfterAmount: ab.EarnAccount,
+		Desc:        "个人收益账户，基金卖出入账",
+	})
+	//4. 计入入账到 基金公司的账户上
+	ab.PlatformAccount -= sellAmount - fee
+	accountLogList = append(accountLogList, AccountLog{
+		Id:          GetNextId(),
+		Date:        date,
+		AccountType: 4,
+		Amount:      chargeAmount,
+		AfterAmount: ab.PlatformAccount,
+		Desc:        "基金公司，用户卖出基金",
+	})
+
+	return ab, accountLogList
+}
+
+func DoBuy(date string, ab *AccountBook, accountLogList []AccountLog, i int64) (*AccountBook, []AccountLog) {
+	//1. 从用户支出账户上扣除费用const
+
+	buyAmount := int64(ab.FundAccount * i)
+
+	ab.CostAccount = ab.CostAccount - buyAmount
+	accountLogList = append(accountLogList, AccountLog{
+		Id:          GetNextId(),
+		Date:        date,
+		AccountType: 1,
+		Amount:      -buyAmount,
+		AfterAmount: ab.CostAccount,
+		Desc:        "扣除费用",
+	})
+	//2. 计入手续费到 基金公司账户
+	fee := int64(float64(buyAmount) * feeRatio)
+	ab.PlatformAccount = ab.PlatformAccount + fee
+	accountLogList = append(accountLogList, AccountLog{
+		Id:          GetNextId(),
+		Date:        date,
+		AccountType: 4,
+		Amount:      fee,
+		AfterAmount: ab.PlatformAccount,
+		Desc:        "基金公司，手续费收入",
+	})
+	//3. 计入基金份额基金市值到  个人的基金账户
+	chargeAmount := buyAmount - fee
+	ab.FundAccount += chargeAmount
+
+	accountLogList = append(accountLogList, AccountLog{
+		Id:          GetNextId(),
+		Date:        date,
+		AccountType: 3,
+		Amount:      chargeAmount,
+		AfterAmount: ab.FundAccount,
+		Desc:        "个人基金账户，基金买入",
+	})
+	//4. 计入入账到 基金公司的账户上
+	ab.PlatformAccount += chargeAmount
+	accountLogList = append(accountLogList, AccountLog{
+		Id:          GetNextId(),
+		Date:        date,
+		AccountType: 4,
+		Amount:      chargeAmount,
+		AfterAmount: ab.PlatformAccount,
+		Desc:        "基金公司，用户买入基金",
+	})
+	return ab, accountLogList
 }
