@@ -53,9 +53,9 @@ func GetNextId() int64 {
 }
 func main() {
 
-	//fh, error := os.Open("./data/efunds_sh50etf_110003.csv")
+	fh, error := os.Open("./data/efunds_sh50etf_110003.csv")
 
-	fh, error := os.Open("./data/006331.csv")
+	//fh, error := os.Open("./data/006331.csv")
 	if error != nil {
 		fmt.Println(error.Error())
 		os.Exit(-1)
@@ -68,7 +68,7 @@ func main() {
 	fullStr := string(full)
 
 	fLine := strings.Split(fullStr, "\n")
-	fmt.Println(fLine[0])
+	//fmt.Println(fLine[0])
 
 	//获得了一行行的数据
 	var fundData []FundDataItem
@@ -96,7 +96,7 @@ func main() {
 				ProfitRait:  it[3],
 			}
 
-			fmt.Printf(" the result of fundDataItem: %+v\n", fdi)
+			//fmt.Printf(" the result of fundDataItem: %+v\n", fdi)
 			fundData = append(fundData, fdi)
 
 		}
@@ -109,12 +109,14 @@ func main() {
 
 	//var buyBonousRatio float64 = 0.999
 	//var sellBonousRatio float64 = 0.125
+	var buyBonousRatio float64 = 37.5
+	var sellBonousRatio float64 = 37.5
 
 	//var buyBonousRatio float64 = 0.618
 	//var sellBonousRatio float64 = 0.382
 
-	var buyBonousRatio float64 = 0.125
-	var sellBonousRatio float64 = 50.0
+	//var buyBonousRatio float64 = 0.125
+	//var sellBonousRatio float64 = 50.0
 
 	//从2021年1月4日开始算
 
@@ -149,11 +151,11 @@ func main() {
 	var todayProfit int64 = fundData[0].DayProfit
 
 	for i := len(fundData) - 1; i >= 0; i-- {
-		fmt.Printf("data: %+v", fundData[i])
+		//		fmt.Printf("data: %+v", fundData[i])
 
 		iData := fundData[i]
 		if i == len(fundData)-1 {
-			fmt.Println("第一次交易")
+			//		fmt.Println("第一次交易")
 
 			realData := fundData[len(fundData)-2]
 			//1. 从用户支出账户上扣除费用const
@@ -219,14 +221,14 @@ func main() {
 					// 昨天的比今天的要高，今天亏钱了，补仓
 
 					x := float64(oldData.DayProfit-iData.DayProfit) / float64(oldData.DayProfit)
-					fmt.Printf(" 算出来的比率: %+v\n", x)
+					//		fmt.Printf(" 算出来的比率: %+v\n", x)
 					ab, accountLogList = DoBuy(iData, realData, ab, accountLogList, x, buyBonousRatio)
 				} else {
 					//赚钱了，卖出
 
 					x := float64(iData.DayProfit-oldData.DayProfit) / float64(oldData.DayProfit)
 
-					fmt.Printf(" 算出来的比率: %+v\n", x)
+					//			fmt.Printf(" 算出来的比率: %+v\n", x)
 					ab, accountLogList = DoSell(iData, realData, ab, accountLogList, x, buyBonousRatio)
 				}
 			}
