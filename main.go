@@ -39,7 +39,7 @@ type FundDataItem struct {
 }
 
 // 手续费是0.01
-var feeRatio = 0.01
+var feeRatio = 0.0015
 
 //ID发号器
 var IdChain int64 = 1
@@ -192,28 +192,35 @@ func main() {
 			} else if oldData.DayProfit > iData.DayProfit {
 				// 昨天的比今天的要高，今天亏钱了，补仓
 
-				x := (oldData.DayProfit - iData.DayProfit) / oldData.DayProfit
+				x := float64(oldData.DayProfit-iData.DayProfit) / float64(oldData.DayProfit)
+				fmt.Printf(" 算出来的比率: %+v\n", x)
 				ab, accountLogList = DoBuy(iData.Date, ab, accountLogList, x)
 			} else {
 				//赚钱了，卖出
 
-				x := ((iData.DayProfit - oldData.DayProfit) / oldData.DayProfit)
+				x := float64(iData.DayProfit-oldData.DayProfit) / float64(oldData.DayProfit)
+
+				fmt.Printf(" 算出来的比率: %+v\n", x)
 				ab, accountLogList = DoSell(iData.Date, ab, accountLogList, x)
 			}
 		}
 
 	}
 
-	fmt.Printf("账户余额: %v\n", ab)
-
 	fmt.Printf("账户日志:  %v\n", accountLogList)
+
+	fmt.Printf("账户：支出：%f, 收入合计：%f,  [收益: %f, 个人基金账户: %f], 基金公司账户：%f\n", float64(ab.CostAccount)/float64(10000),
+		float64(ab.EarnAccount)/float64(10000)+float64(ab.FundAccount)/float64(10000),
+		float64(ab.EarnAccount)/float64(10000),
+		float64(ab.FundAccount)/float64(10000),
+		float64(ab.PlatformAccount)/float64(10000))
 
 }
 
-func DoSell(date string, ab *AccountBook, accountLogList []AccountLog, i int64) (*AccountBook, []AccountLog) {
+func DoSell(date string, ab *AccountBook, accountLogList []AccountLog, i float64) (*AccountBook, []AccountLog) {
 	//1. 从用户支出账户上扣除费用const
 
-	sellAmount := int64(float64(ab.FundAccount*i) * 0.618)
+	sellAmount := int64(float64(ab.FundAccount) * i * 0.9)
 
 	ab.FundAccount -= sellAmount
 	accountLogList = append(accountLogList, AccountLog{
@@ -261,10 +268,10 @@ func DoSell(date string, ab *AccountBook, accountLogList []AccountLog, i int64) 
 	return ab, accountLogList
 }
 
-func DoBuy(date string, ab *AccountBook, accountLogList []AccountLog, i int64) (*AccountBook, []AccountLog) {
+func DoBuy(date string, ab *AccountBook, accountLogList []AccountLog, i float64) (*AccountBook, []AccountLog) {
 	//1. 从用户支出账户上扣除费用const
 
-	buyAmount := int64(ab.FundAccount * i)
+	buyAmount := int64(float64(ab.FundAccount) * i * 0.1)
 
 	ab.CostAccount = ab.CostAccount - buyAmount
 	accountLogList = append(accountLogList, AccountLog{
