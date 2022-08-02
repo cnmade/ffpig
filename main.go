@@ -75,6 +75,7 @@ func main() {
 
 	//fh, error := os.Open("./data/006331.csv")
 	fh, error := os.Open("./data/531020.csv")
+	//fh, error := os.Open("./data/005918.csv")
 	if error != nil {
 		fmt.Println(error.Error())
 		os.Exit(-1)
@@ -155,6 +156,16 @@ func main() {
 		{20, 0},
 		{10, 0},
 		{5, 0},
+	}
+
+	for fi := 0.01; fi < 0.99; fi += 0.05 {
+		for fj := 0.01; fj < 0.99; fj += 0.05 {
+
+			bonusRatioList = append(bonusRatioList, BonousRatioPair{
+				Buy:  fi,
+				Sell: fj,
+			})
+		}
 	}
 
 	for _, b := range bonusRatioList {
