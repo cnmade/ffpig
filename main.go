@@ -8,10 +8,12 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"text/tabwriter"
 )
 
 type AccountLog struct {
 	Id             int64
+	TradeId        int64
 	Date           string
 	AccountType    int
 	Amount         int64
@@ -51,18 +53,27 @@ var feeRatio = 0.0005
 var startBalance int64 = 10000 * 10000
 
 //ID发号器
-var IdChain int64 = 1
+var IdChain int64 = 0
+
+var tradeIdSerial int64 = 0
 
 func GetNextId() int64 {
 	nextId := atomic.LoadInt64(&IdChain) + 1
 	atomic.StoreInt64(&IdChain, nextId)
 	return nextId
 }
+
+func GetNextTradeId() int64 {
+
+	nextId := atomic.LoadInt64(&tradeIdSerial) + 1
+	atomic.StoreInt64(&tradeIdSerial, nextId)
+	return nextId
+}
 func main() {
 
-	fh, error := os.Open("./data/efunds_sh50etf_110003.csv")
+	//fh, error := os.Open("./data/efunds_sh50etf_110003.csv")
 
-	//fh, error := os.Open("./data/006331.csv")
+	fh, error := os.Open("./data/006331.csv")
 	if error != nil {
 		fmt.Println(error.Error())
 		os.Exit(-1)
@@ -121,29 +132,29 @@ func main() {
 
 	//var buyBonousRatio float64 = 0.125
 	//var sellBonousRatio float64 = 50.0
-	var bonusRatioList = []BonousRatioPair{
-		{0.125, 50.0},
-	}
 	//var bonusRatioList = []BonousRatioPair{
-	//	{0, 1.0},
-	//	{1.0, 0},
-	//	{1.0, 1.0},
-	//	{0.0, 0.0},
-	//	{50.0, 50.0},
-	//	{50.0, 0.382},
-	//	{50.0, 0.1},
-	//	{0.999, 0.125},
-	//	{37.5, 37.5},
-	//	{0.618, 0.382},
 	//	{0.125, 50.0},
-	//	{150, 0},
-	//	{100, 0},
-	//	{50, 0},
-	//	{25, 0},
-	//	{20, 0},
-	//	{10, 0},
-	//	{5, 0},
 	//}
+	var bonusRatioList = []BonousRatioPair{
+		{0, 1.0},
+		{1.0, 0},
+		{1.0, 1.0},
+		{0.0, 0.0},
+		{50.0, 50.0},
+		{50.0, 0.382},
+		{50.0, 0.1},
+		{0.999, 0.125},
+		{37.5, 37.5},
+		{0.618, 0.382},
+		{0.125, 50.0},
+		{150, 0},
+		{100, 0},
+		{50, 0},
+		{25, 0},
+		{20, 0},
+		{10, 0},
+		{5, 0},
+	}
 
 	for _, b := range bonusRatioList {
 		calcProfit(b, fundData)
@@ -191,11 +202,14 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 		if i == len(fundData)-1 {
 			//		fmt.Println("第一次交易")
 
+			nextTradeId := GetNextTradeId()
+
 			realData := fundData[len(fundData)-2]
 			//1. 从用户支出账户上扣除费用const
 			ab.CostAccount = -startBalance
 			accountLogList = append(accountLogList, AccountLog{
 				Id:          GetNextId(),
+				TradeId:     nextTradeId,
 				Date:        iData.Date,
 				AccountType: 1,
 				Amount:      -startBalance,
@@ -207,6 +221,7 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 			ab.PlatformAccount = fee
 			accountLogList = append(accountLogList, AccountLog{
 				Id:          GetNextId(),
+				TradeId:     nextTradeId,
 				Date:        iData.Date,
 				AccountType: 4,
 				Amount:      fee,
@@ -220,6 +235,7 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 
 			accountLogList = append(accountLogList, AccountLog{
 				Id:             GetNextId(),
+				TradeId:        nextTradeId,
 				Date:           iData.Date,
 				AccountType:    3,
 				Amount:         chargeAmount,
@@ -231,6 +247,7 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 			ab.PlatformAccount += chargeAmount
 			accountLogList = append(accountLogList, AccountLog{
 				Id:          GetNextId(),
+				TradeId:     nextTradeId,
 				Date:        iData.Date,
 				AccountType: 4,
 				Amount:      chargeAmount,
@@ -258,7 +275,7 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 						x := float64(oldData.DayProfit-iData.DayProfit) / float64(oldData.DayProfit)
 						//		fmt.Printf(" 算出来的比率: %+v\n", x)
 						// 当前账户
-						fmt.Printf("%+v\n", ab)
+						//fmt.Printf("%+v\n", ab)
 						ab, accountLogList = DoBuy(iData, realData, ab, accountLogList, x, b.Buy)
 					}
 				} else {
@@ -277,13 +294,16 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 
 	}
 
-	WellPrint(accountLogList)
+	//WellPrint(accountLogList)
 
 	x := float64(ab.CostAccount) / float64(10000)
 	x1 := float64(ab.EarnAccount)/float64(10000) + float64(ab.FundAccount)/float64(10000)*float64(todayProfit)/float64(10000)
 	x2 := x1 - math.Abs(x)
 	xr := float64(x2) / float64(math.Abs(x))
-	fmt.Printf("买入加成比率：%f\t卖出加成比率: %f\t账户：支出：%f\t收入合计：%f\t剪刀差: %f\t剪刀收益率: %f\t[收益: %f\t个人基金账户: %f份基金]\t基金公司账户：%f\n",
+
+	const padding = 0
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', tabwriter.AlignRight|tabwriter.Debug)
+	fmt.Fprintf(w, "买入加成比率：%f\t卖出加成比率: %f\t账户：支出：%f\t收入合计：%f\t剪刀差: %f\t剪刀收益率: %f\t[收益: %f\t个人基金账户: %f份基金]\t基金公司账户：%f\t\n",
 		b.Buy,
 		b.Sell,
 
@@ -294,17 +314,30 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 		float64(ab.EarnAccount)/float64(10000),
 		float64(ab.FundAccount)/float64(10000),
 		float64(ab.PlatformAccount)/float64(10000))
+	w.Flush()
 }
 
 func DoSell(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []AccountLog, i float64, bonusRatio float64) (*AccountBook, []AccountLog) {
 	//1. 从用户支出账户上扣除费用const
 
 	sellAmount := int64(float64(ab.FundAccount) * i * bonusRatio)
+
 	sellShare := int64(float64(sellAmount) / float64(g.DayProfit) * 10000)
 
+	if sellShare < 10000 {
+		sellShare = 10000
+	}
+
+	if sellShare > ab.FundAccount {
+		//fmt.Printf("sellShare: %f, FundAccount: %f卖出份额小于账户可卖份额，不处理\n", float64(sellShare)/float64(10000), float64(ab.FundAccount)/float64(10000))
+		return ab, accountLogList
+	}
+
+	nextTradeId := GetNextTradeId()
 	ab.FundAccount -= sellShare
 	accountLogList = append(accountLogList, AccountLog{
 		Id:             GetNextId(),
+		TradeId:        nextTradeId,
 		Date:           f.Date,
 		AccountType:    3,
 		Amount:         -sellShare,
@@ -317,6 +350,7 @@ func DoSell(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Ac
 	ab.PlatformAccount += fee
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
+		TradeId:     nextTradeId,
 		Date:        f.Date,
 		AccountType: 4,
 		Amount:      fee,
@@ -330,6 +364,7 @@ func DoSell(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Ac
 
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
+		TradeId:     nextTradeId,
 		Date:        f.Date,
 		AccountType: 2,
 		Amount:      chargeAmount,
@@ -340,6 +375,7 @@ func DoSell(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Ac
 	ab.PlatformAccount -= sellAmount - fee
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
+		TradeId:     nextTradeId,
 		Date:        f.Date,
 		AccountType: 4,
 		Amount:      chargeAmount,
@@ -360,10 +396,14 @@ func WellPrint(pl []AccountLog) {
 	ProfitExchange float64
 	Desc           string
 	*/
-	fmt.Println("Id\tDate\tAccountType\tAmount\tAfterAmount\tProfitExchange\tDesc")
+
+	const padding = 2
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', tabwriter.AlignRight|tabwriter.Debug)
+	fmt.Fprintln(w, "Id\tTradeId\tDate\tAccountType\tAmount\tAfterAmount\tProfitExchange\tDesc\t")
 	for _, v := range pl {
-		fmt.Printf(" %v\t%v\t%v\t%v %v\t%v\t%v\n", v.Id, v.Date, GetAccountType(v.AccountType), v.Amount, v.AfterAmount, v.ProfitExchange, v.Desc)
+		fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\t\n", v.Id, v.TradeId, v.Date, GetAccountType(v.AccountType), v.Amount, v.AfterAmount, v.ProfitExchange, v.Desc)
 	}
+	w.Flush()
 }
 func GetAccountType(n int) string {
 	switch n {
@@ -383,9 +423,16 @@ func DoBuy(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Acc
 
 	buyAmount := int64(float64(ab.FundAccount) * i * bonusRatio)
 
+	if buyAmount < 100000 {
+		buyAmount = 100000
+	}
+
+	nextTradeId := GetNextTradeId()
+
 	ab.CostAccount = ab.CostAccount - buyAmount
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
+		TradeId:     nextTradeId,
 		Date:        f.Date,
 		AccountType: 1,
 		Amount:      -buyAmount,
@@ -397,6 +444,7 @@ func DoBuy(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Acc
 	ab.PlatformAccount = ab.PlatformAccount + fee
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
+		TradeId:     nextTradeId,
 		Date:        f.Date,
 		AccountType: 4,
 		Amount:      fee,
@@ -411,6 +459,7 @@ func DoBuy(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Acc
 
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
+		TradeId:     nextTradeId,
 		Date:        f.Date,
 		AccountType: 3,
 		Amount:      buyShare,
@@ -421,6 +470,7 @@ func DoBuy(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Acc
 	ab.PlatformAccount += chargeAmount
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
+		TradeId:     nextTradeId,
 		Date:        f.Date,
 		AccountType: 4,
 		Amount:      chargeAmount,
