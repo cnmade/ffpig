@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"text/tabwriter"
+
+	"github.com/shopspring/decimal"
 )
 
 type AccountLog struct {
@@ -42,21 +44,29 @@ type FundDataItem struct {
 	ProfitRait  string
 }
 type BonousRatioPair struct {
-	Buy  float64
-	Sell float64
+	Buy  decimal.Decimal
+	Sell decimal.Decimal
 }
 
 // 手续费是0.01
-var feeRatio = 0.0005
+var feeRatio = decimal.NewFromFloat(0.0005)
 
 //一万块钱开始
-var startBalance int64 = 10000 * 10000
+var startBalance = decimal.NewFromInt(10000 * 10000)
 
 //ID发号器
 var IdChain int64 = 0
 
 var tradeIdSerial int64 = 0
 
+// 1万
+var ONEW = decimal.NewFromInt(10000)
+
+//获得int64值
+func AsInt64(i decimal.Decimal) int64 {
+	f, _ := i.BigFloat().Int64()
+	return f
+}
 func GetNextId() int64 {
 	nextId := atomic.LoadInt64(&IdChain) + 1
 	atomic.StoreInt64(&IdChain, nextId)
@@ -70,11 +80,14 @@ func GetNextTradeId() int64 {
 	return nextId
 }
 func main() {
+	//fname := "./data/006331.csv"
+	fname := "./data/531020.csv"
 
 	//fh, error := os.Open("./data/efunds_sh50etf_110003.csv")
 
-	//fh, error := os.Open("./data/006331.csv")
-	fh, error := os.Open("./data/531020.csv")
+	fmt.Printf("filename: %s\n", fname)
+	fh, error := os.Open(fname)
+	//fh, error := os.Open("./data/531020.csv")
 	//fh, error := os.Open("./data/005918.csv")
 	if error != nil {
 		fmt.Println(error.Error())
@@ -124,46 +137,33 @@ func main() {
 
 	// 买，卖加成比率
 
-	//var buyBonousRatio float64 = 0.999
-	//var sellBonousRatio float64 = 0.125
-	//var buyBonousRatio float64 = 37.5
-	//var sellBonousRatio float64 = 37.5
-
-	//var buyBonousRatio float64 = 0.618
-	//var sellBonousRatio float64 = 0.382
-
-	//var buyBonousRatio float64 = 0.125
-	//var sellBonousRatio float64 = 50.0
-	//var bonusRatioList = []BonousRatioPair{
-	//	{0.125, 50.0},
-	//}
 	var bonusRatioList = []BonousRatioPair{
-		{0, 1.0},
-		{1.0, 0},
-		{1.0, 1.0},
-		{0.0, 0.0},
-		{50.0, 50.0},
-		{50.0, 0.382},
-		{50.0, 0.1},
-		{0.999, 0.125},
-		{37.5, 37.5},
-		{0.618, 0.382},
-		{0.125, 50.0},
-		{150, 0},
-		{100, 0},
-		{50, 0},
-		{25, 0},
-		{20, 0},
-		{10, 0},
-		{5, 0},
+		{decimal.NewFromFloat(0), decimal.NewFromFloat(1.0)},
+		{decimal.NewFromFloat(1.0), decimal.NewFromFloat(0)},
+		{decimal.NewFromFloat(1.0), decimal.NewFromFloat(1.0)},
+		{decimal.NewFromFloat(0.0), decimal.NewFromFloat(0.0)},
+		{decimal.NewFromFloat(50.0), decimal.NewFromFloat(50.0)},
+		{decimal.NewFromFloat(50.0), decimal.NewFromFloat(0.382)},
+		{decimal.NewFromFloat(50.0), decimal.NewFromFloat(0.1)},
+		{decimal.NewFromFloat(0.999), decimal.NewFromFloat(0.125)},
+		{decimal.NewFromFloat(37.5), decimal.NewFromFloat(37.5)},
+		{decimal.NewFromFloat(0.618), decimal.NewFromFloat(0.382)},
+		{decimal.NewFromFloat(0.125), decimal.NewFromFloat(50.0)},
+		{decimal.NewFromFloat(150), decimal.NewFromFloat(0)},
+		{decimal.NewFromFloat(100), decimal.NewFromFloat(0)},
+		{decimal.NewFromFloat(50), decimal.NewFromFloat(0)},
+		{decimal.NewFromFloat(25), decimal.NewFromFloat(0)},
+		{decimal.NewFromFloat(20), decimal.NewFromFloat(0)},
+		{decimal.NewFromFloat(10), decimal.NewFromFloat(0)},
+		{decimal.NewFromFloat(5), decimal.NewFromFloat(0)},
 	}
 
 	for fi := 0.01; fi < 0.99; fi += 0.05 {
 		for fj := 0.01; fj < 0.99; fj += 0.05 {
 
 			bonusRatioList = append(bonusRatioList, BonousRatioPair{
-				Buy:  fi,
-				Sell: fj,
+				Buy:  decimal.NewFromFloat(fi),
+				Sell: decimal.NewFromFloat(fj),
 			})
 		}
 	}
@@ -218,18 +218,19 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 
 			realData := fundData[len(fundData)-2]
 			//1. 从用户支出账户上扣除费用const
-			ab.CostAccount = -startBalance
+			ab.CostAccount = AsInt64(decimal.NewFromInt(0).Sub(startBalance))
 			accountLogList = append(accountLogList, AccountLog{
 				Id:          GetNextId(),
 				TradeId:     nextTradeId,
 				Date:        iData.Date,
 				AccountType: 1,
-				Amount:      -startBalance,
+				Amount:      -AsInt64(startBalance),
 				AfterAmount: ab.CostAccount,
 				Desc:        "扣除费用",
 			})
 			//2. 计入手续费到 基金公司账户
-			fee := int64(float64(startBalance) * feeRatio)
+			rawFee := startBalance.Mul(feeRatio)
+			fee := AsInt64(rawFee)
 			ab.PlatformAccount = fee
 			accountLogList = append(accountLogList, AccountLog{
 				Id:          GetNextId(),
@@ -241,9 +242,10 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 				Desc:        "基金公司，手续费收入",
 			})
 			//3. 计入基金份额基金市值到  个人的基金账户
-			chargeAmount := startBalance - fee
+			rawChargeAmount := startBalance.Sub(rawFee)
+			chargeAmount := AsInt64(rawChargeAmount)
 			//除以今天的单价，等于基金份额
-			ab.FundAccount = int64((float64(chargeAmount) / float64(realData.DayProfit)) * 10000)
+			ab.FundAccount = AsInt64(rawChargeAmount.Div(decimal.NewFromInt(realData.DayProfit)).Mul(ONEW))
 
 			accountLogList = append(accountLogList, AccountLog{
 				Id:             GetNextId(),
@@ -283,8 +285,9 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 				} else if oldData.DayProfit > iData.DayProfit {
 					// 昨天的比今天的要高，今天亏钱了，补仓
 
-					if b.Buy > 0 {
-						x := float64(oldData.DayProfit-iData.DayProfit) / float64(oldData.DayProfit)
+					if b.Buy.Cmp(decimal.Zero) > 0 {
+						diffCalc := decimal.NewFromInt(oldData.DayProfit).Sub(decimal.NewFromInt(iData.DayProfit))
+						x := diffCalc.Div(decimal.NewFromInt(oldData.DayProfit))
 						//		fmt.Printf(" 算出来的比率: %+v\n", x)
 						// 当前账户
 						//fmt.Printf("%+v\n", ab)
@@ -293,11 +296,12 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 				} else {
 					//赚钱了，卖出
 
-					if b.Sell > 0 {
-						x := float64(iData.DayProfit-oldData.DayProfit) / float64(oldData.DayProfit)
+					if b.Sell.Cmp(decimal.Zero) > 0 {
 
+						diffCalc := decimal.NewFromInt(iData.DayProfit).Sub(decimal.NewFromInt(oldData.DayProfit))
+						y := diffCalc.Div(decimal.NewFromInt(oldData.DayProfit))
 						//			fmt.Printf(" 算出来的比率: %+v\n", x)
-						ab, accountLogList = DoSell(iData, realData, ab, accountLogList, x, b.Sell)
+						ab, accountLogList = DoSell(iData, realData, ab, accountLogList, y, b.Sell)
 					}
 
 				}
@@ -308,16 +312,26 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 
 	//WellPrint(accountLogList)
 
-	x := float64(ab.CostAccount) / float64(10000)
-	x1 := float64(ab.EarnAccount)/float64(10000) + float64(ab.FundAccount)/float64(10000)*float64(todayProfit)/float64(10000)
-	x2 := x1 - math.Abs(x)
-	xr := float64(x2) / float64(math.Abs(x))
+	x, _ := decimal.NewFromInt(ab.CostAccount).Div(ONEW).Float64()
+	x5 := decimal.NewFromInt(ab.EarnAccount).Div(ONEW)
+	x6 := decimal.NewFromInt(ab.FundAccount).Div(ONEW).Mul(decimal.NewFromInt(todayProfit)).Div(ONEW)
+	rawX1 := x5.Add(x6)
+	x1, _ := rawX1.Float64()
+
+	rawX2 := rawX1.Sub(decimal.NewFromFloat(math.Abs(x)))
+	x2, _ := rawX2.Float64()
+
+	rawXr := rawX2.Div(decimal.NewFromFloat(math.Abs(x)))
+
+	xr, _ := rawXr.Float64()
 
 	const padding = 0
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', tabwriter.AlignRight|tabwriter.Debug)
+	x3, _ := b.Buy.Float64()
+	x4, _ := b.Sell.Float64()
 	fmt.Fprintf(w, "买入加成比率：%.4f\t卖出加成比率: %.4f\t账户：支出：%.4f\t收入合计：%.4f\t剪刀差: %.4f\t剪刀收益率: %.4f\t[收益: %.4f\t个人基金账户: %.4f份基金]\t基金公司账户：%.4f\t\n",
-		b.Buy,
-		b.Sell,
+		x3,
+		x4,
 
 		x,
 		x1,
@@ -329,12 +343,14 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 	w.Flush()
 }
 
-func DoSell(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []AccountLog, i float64, bonusRatio float64) (*AccountBook, []AccountLog) {
+func DoSell(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []AccountLog, i decimal.Decimal, bonusRatio decimal.Decimal) (*AccountBook, []AccountLog) {
 	//1. 从用户支出账户上扣除费用const
 
-	sellAmount := int64(float64(ab.FundAccount) * i * bonusRatio)
+	rawSellAmount := decimal.NewFromInt(ab.FundAccount).Mul(i).Mul(bonusRatio)
+	sellAmount := AsInt64(rawSellAmount)
 
-	sellShare := int64(float64(sellAmount) / float64(g.DayProfit) * 10000)
+	rawSellShare := rawSellAmount.Div(decimal.NewFromInt(g.DayProfit)).Mul(ONEW)
+	sellShare := AsInt64(rawSellShare)
 
 	if sellShare < 10000 {
 		sellShare = 10000
@@ -358,7 +374,8 @@ func DoSell(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Ac
 		ProfitExchange: float64(g.DayProfit) / float64(10000),
 	})
 	//2. 计入手续费到 基金公司账户
-	fee := int64(float64(sellAmount) * feeRatio)
+	rawFee := rawSellAmount.Mul(feeRatio)
+	fee := AsInt64(rawFee)
 	ab.PlatformAccount += fee
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
@@ -370,7 +387,9 @@ func DoSell(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Ac
 		Desc:        "基金公司，手续费收入",
 	})
 	//3. 计入基金份额基金市值到  个人的基金账户
-	chargeAmount := sellAmount - fee
+
+	rawChargeAmount := rawSellAmount.Sub(rawFee)
+	chargeAmount := AsInt64(rawChargeAmount)
 
 	ab.EarnAccount += chargeAmount
 
@@ -430,10 +449,11 @@ func GetAccountType(n int) string {
 	}
 	return "无"
 }
-func DoBuy(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []AccountLog, i float64, bonusRatio float64) (*AccountBook, []AccountLog) {
+func DoBuy(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []AccountLog, i decimal.Decimal, bonusRatio decimal.Decimal) (*AccountBook, []AccountLog) {
 	//1. 从用户支出账户上扣除费用const
 
-	buyAmount := int64(float64(ab.FundAccount) * i * bonusRatio)
+	rawBuyAmount := decimal.NewFromInt(ab.FundAccount).Mul(i).Mul(bonusRatio)
+	buyAmount := AsInt64(rawBuyAmount)
 
 	if buyAmount < 100000 {
 		buyAmount = 100000
@@ -452,7 +472,9 @@ func DoBuy(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Acc
 		Desc:        "扣除费用",
 	})
 	//2. 计入手续费到 基金公司账户
-	fee := int64(float64(buyAmount) * feeRatio)
+	rawFee := rawBuyAmount.Mul(feeRatio)
+
+	fee := AsInt64(rawFee)
 	ab.PlatformAccount = ab.PlatformAccount + fee
 	accountLogList = append(accountLogList, AccountLog{
 		Id:          GetNextId(),
@@ -464,9 +486,12 @@ func DoBuy(f FundDataItem, g FundDataItem, ab *AccountBook, accountLogList []Acc
 		Desc:        "基金公司，手续费收入",
 	})
 	//3. 计入基金份额基金市值到  个人的基金账户
-	chargeAmount := buyAmount - fee
+	rawChargeAmount := rawBuyAmount.Sub(rawFee)
+	chargeAmount := AsInt64(rawChargeAmount)
 
-	buyShare := int64(float64(chargeAmount) / float64(g.DayProfit) * 10000)
+	rawBuyShare := rawChargeAmount.Div(decimal.NewFromInt(g.DayProfit)).Mul(ONEW)
+
+	buyShare := AsInt64(rawBuyShare)
 	ab.FundAccount += buyShare
 
 	accountLogList = append(accountLogList, AccountLog{
