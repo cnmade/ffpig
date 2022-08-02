@@ -80,7 +80,9 @@ func GetNextTradeId() int64 {
 	return nextId
 }
 func main() {
-	fname := "./data/006331.csv"
+	//fname := "./data/006331.csv"
+	//fname := "./data/000307.csv"
+	fname := "./data/005669.csv"
 	//fname := "./data/efunds_sh50etf_110003.csv"
 	//fname := "./data/000536.csv"
 	//fname := "./data/531020.csv"
@@ -160,8 +162,8 @@ func main() {
 		{decimal.NewFromFloat(5), decimal.NewFromFloat(0)},
 	}
 
-	for fi := 0.01; fi < 1.99; fi += 0.17 {
-		for fj := 0.01; fj < 1.99; fj += 0.17 {
+	for fi := 0.00; fi < 4.99; fi += 0.11 {
+		for fj := 0.00; fj < 4.99; fj += 0.11 {
 
 			bonusRatioList = append(bonusRatioList, BonousRatioPair{
 				Buy:  decimal.NewFromFloat(fi),
