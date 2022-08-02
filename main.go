@@ -304,7 +304,7 @@ func calcProfit(b BonousRatioPair, fundData []FundDataItem) {
 
 	const padding = 0
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', tabwriter.AlignRight|tabwriter.Debug)
-	fmt.Fprintf(w, "买入加成比率：%f\t卖出加成比率: %f\t账户：支出：%f\t收入合计：%f\t剪刀差: %f\t剪刀收益率: %f\t[收益: %f\t个人基金账户: %f份基金]\t基金公司账户：%f\t\n",
+	fmt.Fprintf(w, "买入加成比率：%.4f\t卖出加成比率: %.4f\t账户：支出：%.4f\t收入合计：%.4f\t剪刀差: %.4f\t剪刀收益率: %.4f\t[收益: %.4f\t个人基金账户: %.4f份基金]\t基金公司账户：%.4f\t\n",
 		b.Buy,
 		b.Sell,
 
