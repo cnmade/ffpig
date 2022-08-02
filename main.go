@@ -73,7 +73,8 @@ func main() {
 
 	//fh, error := os.Open("./data/efunds_sh50etf_110003.csv")
 
-	fh, error := os.Open("./data/006331.csv")
+	//fh, error := os.Open("./data/006331.csv")
+	fh, error := os.Open("./data/531020.csv")
 	if error != nil {
 		fmt.Println(error.Error())
 		os.Exit(-1)
